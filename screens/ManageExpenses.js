@@ -1,12 +1,16 @@
-import { useContext, useLayoutEffect } from "react";
+import { useContext, useLayoutEffect, useState } from "react";
 import { View, StyleSheet } from "react-native";
 import ExpenseForm from "../components/ManageExpense/ExpenseForm";
+import ErrorLoadingOverLay from "../components/UI/ErrorLoadingOverlay";
 import IconButton from "../components/UI/IconButton";
+import LoadingOverLay from "../components/UI/LoadingOverlay";
 import { GlobalStyles } from "../constants/styles";
 import { ExpensesContext } from "../store/expenses-context";
 import { deleteExpense, storeExpense, updateExpense } from "../util/http";
 
 function ManageExpenses({ route, navigation }) {
+  const [error, setError] = useState();
+  const [isSubmitting, setIsSubmitting] = useState(false); //initially we haven't yet gathered data. no request
   const expenseCtx = useContext(ExpensesContext);
   const edittedExpenseId = route.params?.expenseId;
   {
@@ -32,8 +36,14 @@ function ManageExpenses({ route, navigation }) {
   }, [navigation, isEditting]);
 
   async function deleteHandler() {
-    await deleteExpense(edittedExpenseId);
-    expenseCtx.deleteExpense(edittedExpenseId);
+    setIsSubmitting(!false);
+    try {
+      await deleteExpense(edittedExpenseId);
+      expenseCtx.deleteExpense(edittedExpenseId);
+    } catch (error) {
+      setError("Could not delete expense! - Please try again later");
+      setIsSubmitting(false); // we don't want to show loading spinner incase there's an error.
+    }
     navigation.goBack();
   }
 
@@ -42,16 +52,36 @@ function ManageExpenses({ route, navigation }) {
   }
 
   async function confirmHandler(expenseData) {
-    if (isEditting) {
-      expenseCtx.updateExpense(edittedExpenseId, expenseData); //updating locally and also on the firebase
-      await updateExpense(edittedExpenseId, expenseData);
-    } else {
-      //send http request to backend and also keep a copy of our data incse we working offline
-      const id = await storeExpense(expenseData);
-      //adding an id(from db) to any new expense we send to the context
-      expenseCtx.addExpense({ ...expenseData, id: id });
+    setIsSubmitting(true);
+    try {
+      if (isEditting) {
+        expenseCtx.updateExpense(edittedExpenseId, expenseData);
+        //setIsFetching(false);
+        //updating locally and also on the firebase
+        await updateExpense(edittedExpenseId, expenseData);
+      } else {
+        //send http request to backend and also keep a copy of our data incse we working offline
+        const id = await storeExpense(expenseData);
+        //adding an id(from db) to any new expense we send to the context
+        expenseCtx.addExpense({ ...expenseData, id: id });
+      }
+      navigation.goBack();
+    } catch (error) {
+      setError("Could not save data - Please try again later");
+      setIsSubmitting(false);
     }
-    navigation.goBack();
+  }
+
+  function errorHandler() {
+    setError(null);
+  }
+
+  if (error) {
+    return <ErrorLoadingOverLay message={error} onConfirm={errorHandler} />;
+  }
+
+  if (isSubmitting) {
+    return <LoadingOverLay />;
   }
 
   return (
